@@ -1,103 +1,152 @@
-import Image from "next/image";
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { supabase } from "./utils/supabaseClient";
+import UserInfo from "./components/UserInfo";
+import BookCard from "./components/BookCard";
+import SortButton from "./components/SortButton";
+
+type Book = {
+  id: number;
+  title: string;
+  description?: string;
+  image?: string;
+  rating?: number;
+  created_at: string;
+};
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [books, setBooks] = useState<Book[]>([]);
+  const [user, setUser] = useState<any>(null);
+  const [sortBy, setSortBy] = useState<"created_at" | "rating">("created_at");
+  const [searchTerm, setSearchTerm] = useState("");
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+  useEffect(() => {
+    const fetchUserAndBooks = async () => {
+      const { data } = await supabase.auth.getUser();
+      setUser(data.user);
+
+      if (!data.user) {
+        setBooks([]);
+        return;
+      }
+
+      const res = await fetch(`/api/books?user_id=${data.user.id}`);
+      const fetched = await res.json();
+
+      let sorted = [...fetched.books];
+
+      if (sortBy === "created_at") {
+        sorted.sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+      } else if (sortBy === "rating") {
+        sorted.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+      }
+
+      setBooks(sorted);
+    };
+
+    fetchUserAndBooks();
+  }, [sortBy]);
+
+  const handleDelete = async (id: number) => {
+    const confirm = window.confirm("本当に削除しますか？");
+    if (!confirm) return;
+
+    const res = await fetch(`/api/books/${id}`, {
+      method: "DELETE",
+    });
+
+    if (res.ok) {
+      setBooks((prevBooks) => prevBooks.filter((book) => book.id !== id));
+    } else {
+      alert("削除に失敗しました");
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setBooks([]);
+  };
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex flex-col justify-center items-center bg-gray-100">
+        <h1 className="text-2xl font-bold mb-4">📚 本棚アプリ</h1>
+        <p className="text-gray-600 mb-4">ログインしてください。</p>
+        <button
+          onClick={() => supabase.auth.signInWithOAuth({ provider: "google" })}
+          className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+        >
+          Googleでログイン
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-100 py-10 px-4">
+      <div className="max-w-5xl mx-auto">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <UserInfo />
+
+            <button
+              onClick={handleLogout}
+              className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
+            >
+              ログアウト
+            </button>
+          </div>
+
+          <h1 className="text-2xl font-bold mb-4">📚 本棚アプリ</h1>
+
+          <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2">
+              <SortButton
+                label="作成順"
+                value="created_at"
+                current={sortBy}
+                onClick={(value) => setSortBy(value)}
+              />
+              <SortButton
+                label="評価順"
+                value="rating"
+                current={sortBy}
+                onClick={(value) => setSortBy(value)}
+              />
+            </div>
+
+            <input
+              type="text"
+              placeholder="タイトル検索"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="border border-gray-300 px-3 py-2 rounded max-w-xs"
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+
+            <Link href="/add">
+              <button className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+                ＋ 本を追加
+              </button>
+            </Link>
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+        <ul className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+          {books
+            .filter((book) =>
+              book.title.toLowerCase().includes(searchTerm.toLowerCase())
+            )
+            .map((book) => (
+              <BookCard key={book.id} book={book} onDelete={handleDelete} />
+            ))}
+        </ul>
+      </div>
     </div>
   );
 }

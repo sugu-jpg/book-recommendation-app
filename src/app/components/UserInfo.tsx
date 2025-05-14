@@ -4,8 +4,13 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../utils/supabaseClient";
 
+type User = {
+  id: string;
+  email?: string;
+};
+
 export default function UserInfo() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     const fetchUser = async () => {

@@ -11,6 +11,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL")
 }
 
 model Book {
@@ -19,7 +20,7 @@ model Book {
   description String?
   image       String?
   rating      Int?
-  user_id     String?  // ← 追加！ログインユーザーのID
+  user_id     String?  // ユーザーID（Supabase Auth）
   created_at  DateTime @default(now())
 }
 

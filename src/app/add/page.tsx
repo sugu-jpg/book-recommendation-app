@@ -2,8 +2,22 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { supabase } from "../utils/supabaseClient";
 import { Button } from "@/components/ui/button";
+
+// Google Booksの検索結果の型定義
+type BookItem = {
+  id: string;
+  volumeInfo: {
+    title: string;
+    authors?: string[];
+    description?: string;
+    imageLinks?: {
+      thumbnail?: string;
+    };
+  };
+};
 
 export default function AddBookPage() {
   const router = useRouter();
@@ -11,19 +25,86 @@ export default function AddBookPage() {
   const [description, setDescription] = useState("");
   const [image, setImage] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<BookItem[]>([]);
   const [rating, setRating] = useState<number | undefined>(undefined);
+  const [prioritizeFirstVolume, setPrioritizeFirstVolume] = useState(false);
 
   const handleSearch = async () => {
     if (!searchTerm) return;
+    
+    // 検索語の自動補完：マンガなので1巻を優先したい場合の対策
+    let searchQuery = searchTerm;
+    const hasVolumeNumber = /[0-9一二三四五六七八九十百]巻|[0-9]+$|vol\.?[0-9]+/i.test(searchTerm);
+    
+    // 数字を含まない場合、第1巻も検索対象に含める
+    if (!hasVolumeNumber) {
+      // 元の検索語と「第1巻」を含む検索語の両方を検索する
+      searchQuery = `${searchTerm} OR intitle:"${searchTerm} 1" OR intitle:"${searchTerm}1" OR intitle:"${searchTerm} 第1巻"`;
+    }
+    
+    // 検索クエリを送信
     const res = await fetch(
-      `https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(
-        searchTerm
-      )}`
+      `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(searchQuery)}&maxResults=20&orderBy=relevance`
     );
 
     const data = await res.json();
-    setSearchResults(data.items || []);
+    
+    if (!data.items || data.items.length === 0) {
+      setSearchResults([]);
+      return;
+    }
+    
+    // 検索結果の後処理と並べ替え
+    const sortedResults = [...data.items].sort((a, b) => {
+      const titleA = a.volumeInfo.title.toLowerCase();
+      const titleB = b.volumeInfo.title.toLowerCase();
+      const searchTermLower = searchTerm.toLowerCase();
+      
+      // 1巻かどうかのチェック（より強力なパターン）
+      const isVolumeOneA = /巻?1$|第1巻|第一巻|1巻|一巻|vol\.?\s?1|#1$|volume 1/i.test(titleA);
+      const isVolumeOneB = /巻?1$|第1巻|第一巻|1巻|一巻|vol\.?\s?1|#1$|volume 1/i.test(titleB);
+      
+      // 1巻を最優先
+      if (isVolumeOneA && !isVolumeOneB) return -1;
+      if (!isVolumeOneA && isVolumeOneB) return 1;
+      
+      // タイトルが検索語で始まるものを優先
+      const startsWithA = titleA.startsWith(searchTermLower);
+      const startsWithB = titleB.startsWith(searchTermLower);
+      
+      if (startsWithA && !startsWithB) return -1;
+      if (!startsWithA && startsWithB) return 1;
+      
+      // 条件2: "第1巻"や"1巻"、"volume 1"などの文字列を含むものを優先
+      const volumeOneRegexJP = /(第?1巻|1$|一巻|一$)/i;
+      const volumeOneRegexEN = /(volume 1$|vol\.? 1$|book 1$|#1$|part 1$)/i;
+      
+      const isFirstVolumeA = 
+        volumeOneRegexJP.test(titleA) || volumeOneRegexEN.test(titleA);
+      const isFirstVolumeB = 
+        volumeOneRegexJP.test(titleB) || volumeOneRegexEN.test(titleB);
+      
+      if (isFirstVolumeA && !isFirstVolumeB) return -1;
+      if (!isFirstVolumeA && isFirstVolumeB) return 1;
+      
+      // 条件3: 著者名が存在するものを優先
+      const hasAuthorsA = !!a.volumeInfo.authors?.length;
+      const hasAuthorsB = !!b.volumeInfo.authors?.length;
+      
+      if (hasAuthorsA && !hasAuthorsB) return -1;
+      if (!hasAuthorsA && hasAuthorsB) return 1;
+      
+      // 条件4: 画像が存在するものを優先
+      const hasImageA = !!a.volumeInfo.imageLinks?.thumbnail;
+      const hasImageB = !!b.volumeInfo.imageLinks?.thumbnail;
+      
+      if (hasImageA && !hasImageB) return -1;
+      if (!hasImageA && hasImageB) return 1;
+      
+      return 0;
+    });
+    
+    setSearchResults(sortedResults);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -143,7 +224,18 @@ export default function AddBookPage() {
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="書籍タイトルを入力"
               className="flex-1 border border-gray-300 rounded px-3 py-2"
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             />
+            <div className="flex items-center mr-2">
+              <input
+                type="checkbox"
+                id="prioritizeFirstVolume"
+                checked={prioritizeFirstVolume}
+                onChange={(e) => setPrioritizeFirstVolume(e.target.checked)}
+                className="mr-1"
+              />
+              <label htmlFor="prioritizeFirstVolume" className="text-sm">1巻を優先</label>
+            </div>
             <button
               type="button"
               onClick={handleSearch}
@@ -171,10 +263,12 @@ export default function AddBookPage() {
                     {info.authors?.join(", ")}
                   </p>
                   {info.imageLinks?.thumbnail && (
-                    <img
+                    <Image
                       src={info.imageLinks.thumbnail}
                       alt={info.title}
-                      className="mt-2 w-32 h-auto"
+                      width={128}
+                      height={192}
+                      className="mt-2"
                     />
                   )}
                   <p className="text-sm mt-2">

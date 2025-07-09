@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client"; // ✅ 正しい
+import { PrismaClient } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 
 const prisma = new PrismaClient();

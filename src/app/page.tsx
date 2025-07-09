@@ -28,16 +28,47 @@ export default function Home() {
   const [authError, setAuthError] = useState("");
 
   useEffect(() => {
-    const fetchUserAndBooks = async () => {
-      const { data } = await supabase.auth.getUser();
-      setUser(data.user);
-
-      if (!data.user) {
-        setBooks([]);
-        return;
+    // 認証状態の変化を監視
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        setUser(session?.user ?? null);
+        
+        if (session?.user) {
+          // ユーザーがログインした時に本のデータを取得
+          await fetchBooks(session.user.id);
+        } else {
+          // ログアウト時は本のリストをクリア
+          setBooks([]);
+        }
       }
+    );
 
-      const res = await fetch(`/api/books?user_id=${data.user.id}`);
+    // 初回ロード時の認証状態確認
+    const getInitialSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user ?? null);
+      
+      if (session?.user) {
+        await fetchBooks(session.user.id);
+      }
+    };
+
+    getInitialSession();
+
+    // クリーンアップ関数
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ソート変更時に本のデータを再取得
+  useEffect(() => {
+    if (user) {
+      fetchBooks(user.id);
+    }
+  }, [sortBy, user]);
+
+  const fetchBooks = async (userId: string) => {
+    try {
+      const res = await fetch(`/api/books?user_id=${userId}`);
       const fetched = await res.json();
 
       let sorted = [...fetched.books];
@@ -52,10 +83,10 @@ export default function Home() {
       }
 
       setBooks(sorted);
-    };
-
-    fetchUserAndBooks();
-  }, [sortBy]);
+    } catch (error) {
+      console.error("本のデータの取得に失敗しました:", error);
+    }
+  };
 
   const handleDelete = async (id: number) => {
     const confirm = window.confirm("本当に削除しますか？");

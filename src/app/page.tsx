@@ -253,6 +253,16 @@ export default function Home() {
                 ＋ 本を追加
               </button>
             </Link>
+            <Link href="/recommendations">
+              <button className="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600">
+                📖 通常推薦
+              </button>
+            </Link>
+            <Link href="/ml-recommendations">
+              <button className="bg-gradient-to-r from-green-500 to-blue-500 text-white px-4 py-2 rounded hover:from-green-600 hover:to-blue-600">
+                🤖 ML推薦
+              </button>
+            </Link>
           </div>
         </div>
 

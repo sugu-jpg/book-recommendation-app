@@ -5,6 +5,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 import pandas as pd
 from typing import List, Dict, Any, Tuple
 import re
+import random
+from collections import defaultdict
 
 class MLBookRecommender:
     def __init__(self):
@@ -239,110 +241,290 @@ class MLBookRecommender:
         self, 
         user_books: List[Dict[Any, Any]], 
         external_books: List[Dict[Any, Any]], 
-        num_recommendations: int = 10
+        num_recommendations: int = 10,
+        diversity_factor: float = 0.3,
+        randomness: float = 0.2
     ) -> List[Dict[Any, Any]]:
-        """機械学習ベースの推薦 - 完全デバッグ版"""
-        print(f"[ML] ML推薦開始")
-        print(f"[ML] ユーザー本数: {len(user_books)}, 外部本数: {len(external_books)}")
+        """詳細デバッグ版推薦"""
+        print(f"[ML] 推薦開始")
+        print(f"[ML] ユーザー本数: {len(user_books)}")
+        print(f"[ML] 外部本数: {len(external_books)}")
+        print(f"[ML] 合計本数: {len(user_books) + len(external_books)}")
         
         try:
-            # 1. 全ての本（ユーザーの本 + 外部検索結果）でコーパス作成
-            print(f"[ML] ステップ1: コーパス作成開始")
+            # 1-4. 従来の処理
             all_books = user_books + external_books
+            print(f"[ML] all_books作成後: {len(all_books)}冊")
+            
             corpus = self.create_book_corpus(all_books)
-            print(f"[ML] ステップ1完了: コーパスサイズ {len(corpus)}")
-            
-            # 2. TF-IDFモデル学習
-            print(f"[ML] ステップ2: TF-IDF学習開始")
             self.fit_tfidf(corpus)
-            print(f"[ML] ステップ2完了: 特徴語数 {len(self.feature_names)}")
-            
-            # 3. ユーザープロファイル作成
-            print(f"[ML] ステップ3: ユーザープロファイル作成開始")
             user_profile = self.create_user_profile(user_books)
-            print(f"[ML] ステップ3完了: プロファイルサイズ {user_profile.size}")
             
-            # user_profileが空の場合の明示的チェック
             if user_profile.size == 0:
-                print(f"[ML] ユーザープロファイルが空のため推薦を中止")
                 return []
-            
-            # 4. 類似度計算
-            print(f"[ML] ステップ4: 類似度計算開始")
+                
             similarity_scores = self.calculate_similarity_scores(user_profile)
-            print(f"[ML] ステップ4完了: 類似度スコア数 {len(similarity_scores)}")
             
-            # similarity_scoresが空の場合の明示的チェック
-            if len(similarity_scores) == 0:
-                print(f"[ML] 類似度スコアが空のため推薦を中止")
+            if not similarity_scores:
                 return []
             
-            # 5. 推薦生成
-            print(f"[ML] ステップ5: 推薦生成開始")
-            recommendations = []
+            # 重要: ユーザー本数を明示的に記録
             user_books_count = len(user_books)
+            print(f"[ML] ユーザー本のインデックス範囲: 0-{user_books_count-1}")
+            print(f"[ML] 外部本のインデックス範囲: {user_books_count}-{len(all_books)-1}")
             
-            # ユーザーの本のタイトルを正規化して保存
-            user_titles_normalized = set()
-            for book in user_books:
-                title = book.get('title')
-                if title and isinstance(title, str):
-                    normalized = re.sub(r'[0-9]+巻|第[0-9]+巻|モノクロ版|カラー版', '', title.lower()).strip()
-                    if len(normalized) > 0:
-                        user_titles_normalized.add(normalized)
+            # 上位類似度の詳細を表示
+            print(f"[ML] 類似度上位10件の詳細:")
+            for i, (book_index, similarity_score) in enumerate(similarity_scores[:10]):
+                book_type = "ユーザー本" if book_index < user_books_count else "外部本"
+                book_title = self.book_data[book_index].get('title', 'タイトルなし')
+                print(f"[ML]   {i}: index={book_index}, score={similarity_score:.4f}, type={book_type}, title='{book_title[:30]}...'")
             
-            print(f"[ML] 除外対象タイトル数: {len(user_titles_normalized)}")
+            # 外部本の類似度をチェック
+            external_candidates = [(idx, score) for idx, score in similarity_scores if idx >= user_books_count]
+            print(f"[ML] 外部本の候補数: {len(external_candidates)}")
             
-            processed_count = 0
-            for book_index, similarity_score in similarity_scores:
-                processed_count += 1
-                
-                if len(recommendations) >= num_recommendations:
-                    break
-                
-                # 外部検索結果のみを推薦対象とする
-                if book_index < user_books_count:
-                    continue
-                
+            if external_candidates:
+                print(f"[ML] 外部本の上位5件:")
+                for i, (book_index, similarity_score) in enumerate(external_candidates[:5]):
+                    book_title = self.book_data[book_index].get('title', 'タイトルなし')
+                    print(f"[ML]   外部{i}: index={book_index}, score={similarity_score:.4f}, title='{book_title[:30]}...'")
+            
+            # 5. 外部本のみで推薦候補を作成
+            all_candidates = []
+            
+            for book_index, similarity_score in external_candidates:
                 if book_index >= len(self.book_data):
                     continue
-                
+                    
                 book = self.book_data[book_index]
-                book_title = book.get('title')
+                book_title = book.get('title') or ''
                 
-                if not book_title or not isinstance(book_title, str):
+                if not book_title:
+                    continue
+                    
+                # 重複チェック（簡略化）
+                user_titles = [ub.get('title', '').lower() for ub in user_books]
+                if book_title.lower() in user_titles:
                     continue
                 
-                # 正規化して除外判定
-                normalized_title = re.sub(r'[0-9]+巻|第[0-9]+巻|モノクロ版|カラー版', '', book_title.lower()).strip()
+                # 有効な候補として追加
+                category = self.estimate_category(book)
                 
-                # 除外判定
-                if len(normalized_title) > 0 and normalized_title not in user_titles_normalized:
-                    # ML情報を追加
-                    book_with_ml = {
-                        'title': book.get('title', ''),
-                        'authors': book.get('authors', []),
-                        'description': book.get('description', ''),
-                        'image': book.get('image', ''),
-                        'rating': book.get('rating', 0),
-                        'google_id': book.get('google_id', ''),
-                        'ml_similarity_score': float(similarity_score),
-                        'recommendation_reason': f"ML類似度: {similarity_score:.3f}",
-                        'algorithm': 'TF-IDF + Cosine Similarity'
-                    }
-                    
-                    recommendations.append(book_with_ml)
-                    print(f"[ML] 推薦追加 {len(recommendations)}/{num_recommendations}: {book.get('title', 'No Title')} (類似度: {similarity_score:.3f})")
+                candidate = {
+                    'book_data': book,
+                    'similarity_score': float(similarity_score),
+                    'category': category,
+                    'title': book_title
+                }
+                all_candidates.append(candidate)
             
-            print(f"[ML] ステップ5完了: 処理した本数 {processed_count}, 推薦数 {len(recommendations)}")
-            print(f"[ML] ML推薦完了 - {len(recommendations)}件")
-            return recommendations
+            print(f"[ML] 最終的な有効候補数: {len(all_candidates)}")
+            
+            # 推薦候補が少ない場合の対処
+            if len(all_candidates) == 0:
+                print(f"[ML] 外部本候補が0件 - 外部検索を増やす必要があります")
+                return []
+            
+            if len(all_candidates) < num_recommendations:
+                print(f"[ML] 候補不足: {len(all_candidates)}件 < {num_recommendations}件")
+                return [self.format_recommendation(candidate) for candidate in all_candidates]
+            
+            # 7. 推薦生成
+            recommendations = all_candidates[:num_recommendations]  # 簡略化
+            final_recommendations = [self.format_recommendation(candidate) for candidate in recommendations]
+            
+            print(f"[ML] 最終推薦数: {len(final_recommendations)}")
+            return final_recommendations
             
         except Exception as e:
-            print(f"[ML] ML推薦エラー: {e}")
+            print(f"[ML] 推薦エラー: {e}")
             import traceback
             traceback.print_exc()
             return []
+
+    def emergency_fallback_recommendations(self, similarity_scores: List[Tuple[int, float]], user_books_count: int) -> List[Dict[Any, Any]]:
+        """緊急時のフォールバック推薦"""
+        print(f"[ML] 緊急フォールバック開始")
+        
+        fallback_recommendations = []
+        
+        for book_index, similarity_score in similarity_scores:
+            if book_index < user_books_count:
+                continue
+                
+            if book_index >= len(self.book_data):
+                continue
+                
+            book = self.book_data[book_index]
+            book_title = book.get('title') or ''
+            
+            if book_title:
+                # 最低限の推薦情報を作成
+                recommendation = {
+                    'title': book_title,
+                    'authors': book.get('authors', []),
+                    'description': book.get('description', ''),
+                    'image': book.get('image', ''),
+                    'rating': book.get('rating', 0),
+                    'google_id': book.get('google_id', ''),
+                    'ml_similarity_score': float(similarity_score),
+                    'category': '未分類',
+                    'recommendation_reason': f"フォールバック推薦 (類似度: {similarity_score:.3f})",
+                    'algorithm': 'Emergency Fallback'
+                }
+                fallback_recommendations.append(recommendation)
+                
+                if len(fallback_recommendations) >= 12:
+                    break
+        
+        print(f"[ML] フォールバック推薦数: {len(fallback_recommendations)}")
+        return fallback_recommendations
+
+    def estimate_category(self, book: Dict[Any, Any]) -> str:
+        """本のカテゴリを推定"""
+        title = (book.get('title') or '').lower()
+        description = (book.get('description') or '').lower()
+        text = f"{title} {description}"
+        
+        # カテゴリキーワード
+        categories = {
+            'スポーツ': ['バレー', 'サッカー', 'バスケ', 'テニス', 'スポーツ', 'ハイキュー', 'スラム'],
+            'バトル': ['戦い', 'バトル', '戦闘', '格闘', '呪術', '進撃', 'ワンパン'],
+            '恋愛': ['恋', '愛', 'ラブ', 'ロマンス', '結婚', 'カップル'],
+            'ファンタジー': ['魔法', '異世界', 'ファンタジー', '転生', '魔物', '勇者'],
+            'コメディ': ['コメディ', '笑い', 'ギャグ', 'おもしろ', 'ユーモア'],
+            'ミステリー': ['謎', '推理', '事件', '犯罪', '探偵', 'ミステリー'],
+            'ホラー': ['恐怖', 'ホラー', '怖い', '悪魔', 'ゾンビ', '殺人'],
+            '日常': ['日常', '学校', '青春', '友情', '生活', '日々']
+        }
+        
+        for category, keywords in categories.items():
+            if any(keyword in text for keyword in keywords):
+                return category
+        
+        return 'その他'
+
+    def generate_flexible_recommendations(
+        self, 
+        candidates: List[Dict], 
+        num_recommendations: int, 
+        diversity_factor: float, 
+        randomness: float
+    ) -> List[Dict[Any, Any]]:
+        """柔軟な推薦生成（推薦数を確保）"""
+        
+        if not candidates:
+            return []
+        
+        # 1. 候補をスコア順にソート
+        candidates_sorted = sorted(candidates, key=lambda x: x['similarity_score'], reverse=True)
+        
+        # 2. 多様性を考慮する場合
+        if diversity_factor > 0:
+            try:
+                diverse_recommendations = self.apply_diversity_selection(
+                    candidates_sorted, num_recommendations, diversity_factor, randomness
+                )
+                
+                # 多様性選択で十分な数が得られた場合
+                if len(diverse_recommendations) >= num_recommendations:
+                    return diverse_recommendations[:num_recommendations]
+                
+            except Exception as e:
+                print(f"[ML] 多様性選択エラー: {e}")
+        
+        # 3. フォールバック: 高スコア順 + 軽いランダム性
+        print(f"[ML] フォールバック推薦を適用")
+        recommendations = []
+        
+        # 上位候補を取得
+        top_candidates = candidates_sorted[:min(len(candidates_sorted), num_recommendations * 2)]
+        
+        for i, candidate in enumerate(top_candidates):
+            if len(recommendations) >= num_recommendations:
+                break
+            
+            # 軽いランダム性を適用
+            if randomness > 0 and random.random() < randomness:
+                # 時々、少し下位の候補も選ぶ
+                random_index = random.randint(0, min(len(top_candidates) - 1, i + 5))
+                selected_candidate = top_candidates[random_index]
+            else:
+                selected_candidate = candidate
+            
+            # 重複チェック
+            if not any(rec['title'] == selected_candidate['title'] for rec in recommendations):
+                recommendations.append(self.format_recommendation(selected_candidate))
+        
+        return recommendations
+
+    def apply_diversity_selection(
+        self, 
+        candidates: List[Dict], 
+        num_recommendations: int, 
+        diversity_factor: float, 
+        randomness: float
+    ) -> List[Dict[Any, Any]]:
+        """多様性選択"""
+        
+        # カテゴリ別に分類
+        categories = defaultdict(list)
+        for candidate in candidates:
+            categories[candidate['category']].append(candidate)
+        
+        print(f"[ML] カテゴリ別候補数: {[(cat, len(cands)) for cat, cands in categories.items()]}")
+        
+        recommendations = []
+        category_list = list(categories.keys())
+        
+        # 各カテゴリから均等に選択
+        max_per_category = max(1, num_recommendations // len(category_list))
+        
+        for category in category_list:
+            category_candidates = categories[category]
+            
+            # カテゴリ内での選択数
+            to_select = min(max_per_category, len(category_candidates))
+            
+            for i in range(to_select):
+                if len(recommendations) >= num_recommendations:
+                    break
+                
+                if i < len(category_candidates):
+                    candidate = category_candidates[i]
+                    
+                    # ランダム性を適用
+                    if randomness > 0 and random.random() < randomness and i + 1 < len(category_candidates):
+                        # 時々、カテゴリ内の次の候補を選ぶ
+                        candidate = category_candidates[i + 1]
+                    
+                    recommendations.append(self.format_recommendation(candidate))
+        
+        # 残りの枠を埋める
+        all_remaining = [c for c in candidates if not any(rec['title'] == c['title'] for rec in recommendations)]
+        
+        while len(recommendations) < num_recommendations and all_remaining:
+            candidate = all_remaining.pop(0)
+            recommendations.append(self.format_recommendation(candidate))
+        
+        return recommendations
+
+    def format_recommendation(self, candidate: Dict) -> Dict[Any, Any]:
+        """推薦結果のフォーマット"""
+        book = candidate['book_data']
+        return {
+            'title': book.get('title', ''),
+            'authors': book.get('authors', []),
+            'description': book.get('description', ''),
+            'image': book.get('image', ''),
+            'rating': book.get('rating', 0),
+            'google_id': book.get('google_id', ''),
+            'ml_similarity_score': candidate['similarity_score'],
+            'category': candidate['category'],
+            'recommendation_reason': f"類似度: {candidate['similarity_score']:.3f} | カテゴリ: {candidate['category']}",
+            'algorithm': 'TF-IDF + Cosine Similarity + Flexible Diversity'
+        }
 
 # グローバルインスタンス
 ml_recommender = MLBookRecommender()

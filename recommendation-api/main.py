@@ -14,6 +14,8 @@ from google_books import google_books
 # 新しく追加
 from ml_recommender import ml_recommender
 import numpy as np
+import random
+from collections import defaultdict
 
 load_dotenv()
 
@@ -67,27 +69,33 @@ async def get_all_books():
 async def get_ml_recommendations(
     user_id: str,
     keywords: Optional[str] = Query(None, description="検索キーワード"),
-    limit: int = Query(10, description="推薦数")
+    limit: int = Query(10, description="推薦数"),
+    diversity: float = Query(0.3, description="多様性係数(0-1)"),
+    randomness: float = Query(0.2, description="ランダム性係数(0-1)")
 ):
-    """機械学習ベースの推薦"""
+    """外部本を大幅増強した推薦"""
     try:
-        print(f"[API] ML推薦リクエスト開始 - ユーザー: {user_id}")
+        print(f"[API] 推薦リクエスト開始")
         
-        # 1. ユーザーの本を取得
-        print(f"[API] ステップ1: ユーザー本取得開始")
         user_books = db.get_user_books(user_id)
-        print(f"[API] ステップ1完了: ユーザー本数: {len(user_books)}")
+        print(f"[API] ユーザー本数: {len(user_books)}")
         
         if not user_books:
-            return {
-                "message": "ユーザーの本が見つかりません", 
-                "recommendations": [],
-                "debug_info": "ユーザーの本が0件"
-            }
+            return {"message": "ユーザーの本が見つかりません", "recommendations": []}
         
-        # 2. 外部検索で候補を取得
-        print(f"[API] ステップ2: 外部検索開始")
-        search_queries = ["人気 漫画 おすすめ", "話題 コミック 新刊", "評価 高い マンガ"]
+        # 外部検索を大幅に増強
+        search_queries = [
+            "人気 漫画 おすすめ",
+            "話題 コミック 新刊", 
+            "評価 高い マンガ",
+            "ランキング 漫画",
+            "新作 アニメ化",
+            "おすすめ 青年漫画",
+            "人気 少年漫画",
+            "話題 異世界",
+            "評価 恋愛漫画",
+            "新刊 ファンタジー"
+        ]
         
         if keywords:
             user_keywords = [k.strip() for k in keywords.split(',') if k.strip()]
@@ -96,58 +104,38 @@ async def get_ml_recommendations(
         external_books = []
         for i, query in enumerate(search_queries):
             print(f"[API] 外部検索 {i+1}/{len(search_queries)}: {query}")
-            try:
-                books = google_books.search_books(query, 20)
-                external_books.extend(books)
-                print(f"[API] 外部検索 {i+1} 結果: {len(books)}件")
-            except Exception as search_error:
-                print(f"[API] 外部検索 {i+1} エラー: {search_error}")
+            books = google_books.search_books(query, 15)  # 各クエリで15冊
+            external_books.extend(books)
         
-        print(f"[API] ステップ2完了: 外部検索結果合計: {len(external_books)}件")
+        # 重複除去
+        unique_external_books = []
+        seen_titles = set()
+        for book in external_books:
+            title = book.get('title', '')
+            if title and title not in seen_titles:
+                unique_external_books.append(book)
+                seen_titles.add(title)
         
-        if not external_books:
-            return {
-                "message": "外部検索結果が見つかりません", 
-                "recommendations": [],
-                "debug_info": "外部検索結果が0件"
-            }
+        print(f"[API] 外部検索結果（重複除去後）: {len(unique_external_books)}件")
         
-        # 3. 機械学習で推薦
-        print(f"[API] ステップ3: ML推薦開始")
-        try:
-            ml_recommendations = ml_recommender.get_ml_recommendations(
-                user_books, external_books, limit
-            )
-            print(f"[API] ステップ3完了: ML推薦結果: {len(ml_recommendations)}件")
-        except Exception as ml_error:
-            print(f"[API] ステップ3エラー: {ml_error}")
-            import traceback
-            traceback.print_exc()
-            return {
-                "error": f"ML推薦エラー: {str(ml_error)}",
-                "recommendations": [],
-                "debug_info": f"ML推薦処理でエラー: {str(ml_error)}"
-            }
+        # ML推薦
+        ml_recommendations = ml_recommender.get_ml_recommendations(
+            user_books, unique_external_books, limit, diversity, randomness
+        )
+        
+        print(f"[API] 最終推薦結果: {len(ml_recommendations)}件")
         
         return {
-            "strategy": "TF-IDF + コサイン類似度",
+            "strategy": f"外部本増強推薦",
             "user_books_count": len(user_books),
-            "external_books_count": len(external_books),
-            "ml_algorithm": "TF-IDF Vectorization + Cosine Similarity",
-            "ml_features": len(ml_recommender.feature_names) if hasattr(ml_recommender.feature_names, '__len__') and len(ml_recommender.feature_names) > 0 else 0,
-            "recommendations": ml_recommendations,
-            "debug_info": f"正常完了: ユーザー本{len(user_books)}件, 外部{len(external_books)}件, 推薦{len(ml_recommendations)}件"
+            "external_books_count": len(unique_external_books),
+            "ml_algorithm": "TF-IDF + Enhanced External Search",
+            "recommendations": ml_recommendations
         }
-    
+        
     except Exception as e:
-        print(f"[API] 全体エラー: {e}")
-        import traceback
-        traceback.print_exc()
-        return {
-            "error": str(e),
-            "recommendations": [],
-            "debug_info": f"全体エラー: {str(e)}"
-        }
+        print(f"[API] エラー: {e}")
+        return {"error": str(e), "recommendations": []}
 
 @app.get("/api/ml-analysis/{user_id}")
 async def get_ml_analysis(user_id: str):

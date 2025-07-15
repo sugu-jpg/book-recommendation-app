@@ -151,56 +151,59 @@ export default function Home() {
 
   if (!user) {
     return (
-      <div className="min-h-screen flex flex-col justify-center items-center bg-gray-100 p-4">
-        <h1 className="text-2xl font-bold mb-4">📚 本棚アプリ</h1>
+      <div className="min-h-screen flex flex-col justify-center items-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-gray-800 mb-2">📚 本棚アプリ</h1>
+          <p className="text-gray-600">あなたの読書ライフをサポート</p>
+        </div>
         
-        <div className="bg-white p-6 rounded-lg shadow-md w-full max-w-md">
-          <h2 className="text-xl font-semibold mb-4">
-            {isSignUp ? "新規アカウント登録" : "ログイン"}
+        <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md border border-gray-100">
+          <h2 className="text-xl font-semibold mb-6 text-center text-gray-800">
+            {isSignUp ? "✨ 新規アカウント登録" : "🔑 ログイン"}
           </h2>
           
           {authError && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
               {authError}
             </div>
           )}
           
-          <form onSubmit={isSignUp ? handleSignUp : handleEmailLogin}>
-            <div className="mb-4">
-              <label className="block text-gray-700 mb-2">メールアドレス</label>
+          <form onSubmit={isSignUp ? handleSignUp : handleEmailLogin} className="space-y-4">
+            <div>
+              <label className="block text-gray-700 mb-2 font-medium">📧 メールアドレス</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               />
             </div>
             
-            <div className="mb-6">
-              <label className="block text-gray-700 mb-2">パスワード</label>
+            <div>
+              <label className="block text-gray-700 mb-2 font-medium">🔒 パスワード</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               />
             </div>
             
             <button
               type="submit"
-              className="w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 mb-4"
+              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 px-4 rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 transform hover:scale-105 font-medium"
             >
-              {isSignUp ? "登録する" : "ログイン"}
+              {isSignUp ? "🚀 登録する" : "✨ ログイン"}
             </button>
           </form>
           
           <button
             onClick={() => setIsSignUp(!isSignUp)}
-            className="w-full text-blue-500 text-center hover:underline"
+            className="w-full text-blue-500 text-center hover:text-blue-600 mt-4 py-2 transition-colors"
           >
-            {isSignUp ? "アカウントをお持ちの方はこちら" : "新規登録はこちら"}
+            {isSignUp ? "🔄 アカウントをお持ちの方はこちら" : "📝 新規登録はこちら"}
           </button>
         </div>
       </div>
@@ -208,73 +211,106 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 py-10 px-4">
-      <div className="max-w-5xl mx-auto">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-            <UserInfo />
-
-            <button
-              onClick={handleLogout}
-              className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
-            >
-              ログアウト
-            </button>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+      {/* ヘッダー - 2段構成に変更 */}
+      <div className="bg-white shadow-sm border-b border-gray-100">
+        <div className="max-w-6xl mx-auto px-4">
+          {/* 1段目: タイトルとユーザー情報 */}
+          <div className="flex items-center justify-between py-4 border-b border-gray-100">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
+                <span className="text-white font-bold text-lg">📚</span>
+              </div>
+              <h1 className="text-2xl font-bold text-gray-800">本棚アプリ</h1>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <UserInfo />
+              <button
+                onClick={handleLogout}
+                className="bg-red-500 text-white px-3 py-1.5 rounded-lg hover:bg-red-600 transition-colors text-sm"
+              >
+                ログアウト
+              </button>
+            </div>
           </div>
 
-          <h1 className="text-2xl font-bold mb-4">📚 本棚アプリ</h1>
+          {/* 2段目: 操作系ボタンと検索 */}
+          <div className="py-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              {/* 左側: 並び替えと検索 */}
+              <div className="flex flex-wrap gap-3">
+                <div className="flex gap-2">
+                  <SortButton
+                    label="📅 作成順"
+                    value="created_at"
+                    current={sortBy}
+                    onClick={(value) => setSortBy(value)}
+                  />
+                  <SortButton
+                    label="⭐ 評価順"
+                    value="rating"
+                    current={sortBy}
+                    onClick={(value) => setSortBy(value)}
+                  />
+                </div>
 
-          <div className="flex gap-2 flex-wrap">
-            <div className="flex gap-2">
-              <SortButton
-                label="作成順"
-                value="created_at"
-                current={sortBy}
-                onClick={(value) => setSortBy(value)}
-              />
-              <SortButton
-                label="評価順"
-                value="rating"
-                current={sortBy}
-                onClick={(value) => setSortBy(value)}
-              />
+                <input
+                  type="text"
+                  placeholder="🔍 タイトル検索"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="border border-gray-200 px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all min-w-0 w-64"
+                />
+              </div>
+
+              {/* 右側: アクションボタン */}
+              <div className="flex flex-wrap gap-2">
+                <Link href="/add">
+                  <button className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-all duration-200 transform hover:scale-105 shadow-sm">
+                    ➕ 本を追加
+                  </button>
+                </Link>
+                <Link href="/recommendations">
+                  <button className="bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 transition-all duration-200 transform hover:scale-105 shadow-sm">
+                    📖 通常推薦
+                  </button>
+                </Link>
+                <Link href="/ml-recommendations">
+                  <button className="bg-gradient-to-r from-green-500 to-blue-500 text-white px-4 py-2 rounded-lg hover:from-green-600 hover:to-blue-600 transition-all duration-200 transform hover:scale-105 shadow-sm">
+                    🤖 ML推薦
+                  </button>
+                </Link>
+              </div>
             </div>
-
-            <input
-              type="text"
-              placeholder="タイトル検索"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="border border-gray-300 px-3 py-2 rounded max-w-xs"
-            />
-
-            <Link href="/add">
-              <button className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
-                ＋ 本を追加
-              </button>
-            </Link>
-            <Link href="/recommendations">
-              <button className="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600">
-                📖 通常推薦
-              </button>
-            </Link>
-            <Link href="/ml-recommendations">
-              <button className="bg-gradient-to-r from-green-500 to-blue-500 text-white px-4 py-2 rounded hover:from-green-600 hover:to-blue-600">
-                🤖 ML推薦
-              </button>
-            </Link>
           </div>
         </div>
+      </div>
 
-        <ul className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-          {books
-            .filter((book) =>
-              book.title.toLowerCase().includes(searchTerm.toLowerCase())
-            )
-            .map((book) => (
-              <BookCard key={book.id} book={book} onDelete={handleDelete} />
-            ))}
-        </ul>
+      {/* メインコンテンツ */}
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        {books.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="text-6xl mb-4">📚</div>
+            <h2 className="text-2xl font-semibold text-gray-700 mb-2">本棚が空です</h2>
+            <p className="text-gray-500 mb-6">最初の一冊を追加してみましょう！</p>
+            <Link href="/add">
+              <button className="bg-gradient-to-r from-green-500 to-green-600 text-white px-6 py-3 rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 transform hover:scale-105 shadow-md">
+                📖 本を追加する
+              </button>
+            </Link>
+          </div>
+        ) : (
+          <ul className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {books
+              .filter((book) =>
+                book.title.toLowerCase().includes(searchTerm.toLowerCase())
+              )
+              .map((book) => (
+                <BookCard key={book.id} book={book} onDelete={handleDelete} />
+              ))}
+          </ul>
+        )}
       </div>
     </div>
   );

@@ -17,31 +17,10 @@ type MLRecommendation = {
   algorithm: string;
 };
 
-type MLAnalysis = {
-  algorithm: string;
-  total_features: number;
-  user_profile_dimensions: number;
-  corpus_size: number;
-  top_user_features: Array<{
-    feature: string;
-    tfidf_score: number;
-  }>;
-  ml_explanation: {
-    tfidf: string;
-    cosine_similarity: string;
-    user_profile: string;
-    recommendation_process: string;
-  };
-};
-
 export default function MLRecommendationsPage() {
   const [recommendations, setRecommendations] = useState<MLRecommendation[]>([]);
-  const [analysis, setAnalysis] = useState<MLAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState<any>(null);
-  const [keywords, setKeywords] = useState("");
-  const [strategy, setStrategy] = useState("");
-  const [mlFeatures, setMlFeatures] = useState(0);
 
   useEffect(() => {
     const getUser = async () => {
@@ -57,260 +36,228 @@ export default function MLRecommendationsPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams({
-        limit: "12"
+        limit: "12",
+        diversity: "0.3",
+        randomness: "0.2"
       });
       
-      if (keywords.trim()) {
-        params.append("keywords", keywords.trim());
-      }
-      
       const url = `http://localhost:8000/api/ml-recommendations/${user.id}?${params.toString()}`;
-      console.log("ML推薦リクエストURL:", url);
-      
       const response = await fetch(url);
-      console.log("ML推薦レスポンス状態:", response.status);
-      
       const data = await response.json();
-      console.log("ML推薦レスポンスデータ:", data);
-      
-      // デバッグ情報を表示
-      alert(`レスポンス確認:
-      - ステータス: ${response.status}
-      - 推薦数: ${data.recommendations ? data.recommendations.length : 0}
-      - エラー: ${data.error || "なし"}`);
       
       setRecommendations(data.recommendations || []);
-      setStrategy(data.strategy || "");
-      setMlFeatures(data.ml_features || 0);
-      
-      console.log("設定された推薦数:", data.recommendations ? data.recommendations.length : 0);
     } catch (error) {
       console.error("ML推薦取得エラー:", error);
-      alert("ML推薦取得エラー: " + error);
+      alert("推薦の取得に失敗しました。しばらく時間をおいて再度お試しください。");
     }
     setLoading(false);
   };
 
-  const fetchMLAnalysis = async () => {
-    if (!user) return;
-    
-    try {
-      const response = await fetch(`http://localhost:8000/api/ml-analysis/${user.id}`);
-      const data = await response.json();
-      setAnalysis(data);
-    } catch (error) {
-      console.error("ML分析取得エラー:", error);
-    }
-  };
-
   if (!user) {
-    return <div className="p-4">ログインが必要です</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-blue-50">
+        <div className="bg-white p-8 rounded-xl shadow-lg">
+          <div className="text-center">
+            <div className="text-4xl mb-4">🔑</div>
+            <h2 className="text-xl font-semibold text-gray-800 mb-2">ログインが必要です</h2>
+            <p className="text-gray-600 mb-4">機械学習推薦を利用するにはログインしてください</p>
+            <Link href="/">
+              <button className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition-colors">
+                ログインページへ
+              </button>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 py-10 px-4">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold">🤖 機械学習推薦</h1>
-          <Link href="/">
-            <button className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-              ← 戻る
-            </button>
-          </Link>
-        </div>
-
-        {/* ML設定セクション */}
-        <div className="bg-white p-6 rounded-lg shadow-md mb-6">
-          <h2 className="text-xl font-semibold mb-4">🧠 機械学習設定</h2>
-          
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                追加キーワード（オプション）
-              </label>
-              <input
-                type="text"
-                value={keywords}
-                onChange={(e) => setKeywords(e.target.value)}
-                placeholder="例: バトル, 学園, コメディ"
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                外部検索のキーワードを指定できます
-              </p>
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50">
+      {/* ヘッダー */}
+      <div className="bg-white shadow-sm border-b border-gray-100">
+        <div className="max-w-6xl mx-auto px-4 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
+                <span className="text-white font-bold text-xl">🤖</span>
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-800">機械学習推薦</h1>
+              </div>
             </div>
-
-            <div className="flex gap-4">
-              <button
-                onClick={fetchMLRecommendations}
-                disabled={loading}
-                className="bg-green-500 text-white py-2 px-6 rounded hover:bg-green-600 disabled:opacity-50"
-              >
-                {loading ? "ML分析中..." : "🤖 機械学習推薦を取得"}
+            
+            <Link href="/">
+              <button className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-all duration-200 transform hover:scale-105 shadow-sm">
+                ← 戻る
               </button>
-              
-              <button
-                onClick={fetchMLAnalysis}
-                className="bg-purple-500 text-white py-2 px-6 rounded hover:bg-purple-600"
-              >
-                📊 ML分析を表示
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    const response = await fetch(`http://localhost:8000/api/test-ml/${user.id}`);
-                    const data = await response.json();
-                    console.log("テスト結果:", data);
-                    alert(JSON.stringify(data, null, 2));
-                  } catch (error) {
-                    console.error("テストエラー:", error);
-                    alert("テストエラー: " + error);
-                  }
-                }}
-                className="bg-orange-500 text-white py-2 px-6 rounded hover:bg-orange-600"
-              >
-                🔧 接続テスト
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    const response = await fetch(`http://localhost:8000/api/debug-recommendations/${user.id}`);
-                    const data = await response.json();
-                    console.log("デバッグ結果:", data);
-                    
-                    alert(`デバッグ結果:
-                    スコア0の本: ${data.total_zero_books}件
-                    高スコアの本: ${data.total_high_books}件
-                    
-                    あなたの重要キーワード:
-                    ${data.user_top_features.map(f => f.feature).join(', ')}
-                    
-                    詳細はコンソールを確認してください`);
-                  } catch (error) {
-                    console.error("デバッグエラー:", error);
-                  }
-                }}
-                className="bg-red-500 text-white py-2 px-6 rounded hover:bg-red-600"
-              >
-                🔍 類似度デバッグ
-              </button>
-            </div>
+            </Link>
           </div>
         </div>
+      </div>
 
-        {/* ML分析結果 */}
-        {analysis && (
-          <div className="bg-blue-50 p-6 rounded-lg mb-6">
-            <h3 className="text-lg font-semibold mb-4">📊 機械学習分析結果</h3>
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        {/* ML推薦取得セクション */}
+        <div className="bg-white rounded-xl shadow-lg p-8 mb-8 border border-gray-100">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-gradient-to-r from-green-400 to-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-white font-bold text-2xl">🧠</span>
+            </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div className="bg-white p-4 rounded">
-                <h4 className="font-medium text-gray-800">TF-IDF統計</h4>
-                <p className="text-sm text-gray-600">特徴語数: {analysis.total_features}</p>
-                <p className="text-sm text-gray-600">コーパスサイズ: {analysis.corpus_size}</p>
-                <p className="text-sm text-gray-600">プロファイル次元: {analysis.user_profile_dimensions}</p>
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">あなたにおすすめの本</h2>
+            <p className="text-gray-600 mb-6 max-w-2xl mx-auto">
+              機械学習（TF-IDF + コサイン類似度）を使用して、あなたの読書履歴から最適な本を推薦します。
+              読書の好みを分析し、新しい発見をお届けします。
+            </p>
+            
+            <button
+              onClick={fetchMLRecommendations}
+              disabled={loading}
+              className="bg-gradient-to-r from-green-500 to-blue-500 text-white py-3 px-8 rounded-lg hover:from-green-600 hover:to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 shadow-lg font-medium"
+            >
+              {loading ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  分析中...
+                </div>
+              ) : (
+                "🤖 おすすめの本を取得"
+              )}
+            </button>
+          </div>
+
+          {/* AI技術説明 */}
+          <div className="mt-6 p-4 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-100">
+            <h3 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+              <span className="text-purple-600">⚡</span>
+              使用している技術
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600">
+              <div className="flex items-start gap-2">
+                <span className="text-blue-500 mt-0.5">📊</span>
+                <div>
+                  <strong>TF-IDF:</strong> 文書内の重要な単語を特定
+                </div>
               </div>
-              
-              <div className="bg-white p-4 rounded">
-                <h4 className="font-medium text-gray-800">あなたの重要キーワード</h4>
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {analysis.top_user_features.slice(0, 8).map((feature, index) => (
-                    <span 
-                      key={index}
-                      className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded"
-                    >
-                      {feature.feature} ({feature.tfidf_score.toFixed(3)})
-                    </span>
-                  ))}
+              <div className="flex items-start gap-2">
+                <span className="text-green-500 mt-0.5">📐</span>
+                <div>
+                  <strong>コサイン類似度:</strong> 本の内容の類似性を計算
                 </div>
               </div>
             </div>
-            
-            <div className="bg-white p-4 rounded">
-              <h4 className="font-medium text-gray-800 mb-2">📚 機械学習の仕組み</h4>
-              <div className="text-sm text-gray-600 space-y-1">
-                <p><strong>1. TF-IDF:</strong> {analysis.ml_explanation.tfidf}</p>
-                <p><strong>2. コサイン類似度:</strong> {analysis.ml_explanation.cosine_similarity}</p>
-                <p><strong>3. ユーザープロファイル:</strong> {analysis.ml_explanation.user_profile}</p>
-                <p><strong>4. 推薦プロセス:</strong> {analysis.ml_explanation.recommendation_process}</p>
-              </div>
-            </div>
           </div>
-        )}
-
-        {/* 推薦情報 */}
-        {strategy && (
-          <div className="bg-green-50 p-4 rounded mb-6">
-            <h3 className="font-semibold mb-2">🎯 推薦戦略: {strategy}</h3>
-            <p className="text-sm text-gray-600">
-              抽出されたML特徴語数: {mlFeatures}個
-            </p>
-          </div>
-        )}
-
-        {/* デバッグ情報 */}
-        <div className="bg-yellow-50 p-4 rounded mb-6">
-          <h3 className="font-semibold mb-2">🔧 デバッグ情報</h3>
-          <p className="text-sm text-gray-600">
-            推薦配列の長さ: {recommendations.length}
-          </p>
-          <p className="text-sm text-gray-600">
-            ローディング状態: {loading ? "true" : "false"}
-          </p>
-          <p className="text-sm text-gray-600">
-            ユーザーID: {user?.id || "未取得"}
-          </p>
         </div>
 
         {/* 推薦結果 */}
+        {recommendations.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
+              <span className="text-purple-600">✨</span>
+              推薦結果 ({recommendations.length}冊)
+            </h3>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {recommendations.map((book, index) => (
-            <div key={book.google_id || index} className="bg-white rounded-lg shadow-md p-4">
+            <div 
+              key={book.google_id || index} 
+              className="bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300 transform hover:-translate-y-2 border border-gray-100 overflow-hidden group"
+            >
               {book.image && (
-                <Image
-                  src={book.image}
-                  alt={book.title}
-                  width={200}
-                  height={192}
-                  className="w-full h-48 object-cover rounded mb-4"
-                />
+                <div className="relative h-48 overflow-hidden">
+                  <Image
+                    src={book.image}
+                    alt={book.title}
+                    width={300}
+                    height={192}
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  
+                  {/* 類似度スコアバッジ */}
+                  <div className="absolute top-3 right-3">
+                    <div className="bg-gradient-to-r from-purple-500 to-blue-500 text-white px-2 py-1 rounded-full text-xs font-bold shadow-lg">
+                      類似度 {(book.ml_similarity_score * 100).toFixed(1)}%
+                    </div>
+                  </div>
+                </div>
               )}
               
-              <h3 className="font-bold text-lg mb-2">{book.title}</h3>
-              
-              <p className="text-gray-600 text-sm mb-2">
-                著者: {book.authors.join(", ")}
-              </p>
-              
-              {/* ML情報 */}
-              <div className="bg-purple-50 p-2 rounded mb-2">
-                <p className="text-xs text-purple-700">
-                  🤖 {book.algorithm}
+              <div className="p-5">
+                <h3 className="font-bold text-lg mb-2 text-gray-800 line-clamp-2 group-hover:text-purple-600 transition-colors">
+                  {book.title}
+                </h3>
+                
+                <p className="text-gray-600 text-sm mb-3">
+                  📝 {book.authors.join(", ")}
                 </p>
-                <p className="text-xs text-purple-600">
-                  類似度スコア: {book.ml_similarity_score.toFixed(4)}
-                </p>
+                
+                {/* ML情報カード */}
+                <div className="bg-gradient-to-r from-purple-50 to-blue-50 p-3 rounded-lg mb-3 border border-purple-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-medium text-purple-700 mb-1">
+                        🤖 類似度スコア
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <div className="w-full bg-gray-200 rounded-full h-2 max-w-[80px]">
+                          <div 
+                            className="bg-gradient-to-r from-purple-500 to-blue-500 h-2 rounded-full transition-all duration-500"
+                            style={{ width: `${book.ml_similarity_score * 100}%` }}
+                          ></div>
+                        </div>
+                        <span className="text-xs font-bold text-purple-600">
+                          {(book.ml_similarity_score * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {book.description && (
+                  <p className="text-gray-700 text-sm mb-3 line-clamp-3">
+                    {book.description.slice(0, 150)}...
+                  </p>
+                )}
+                
+                {book.rating > 0 && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-yellow-500">⭐</span>
+                    <span className="text-sm font-medium text-gray-700">{book.rating}/5</span>
+                  </div>
+                )}
               </div>
-              
-              {book.description && (
-                <p className="text-gray-700 text-sm mb-3 line-clamp-3">
-                  {book.description.slice(0, 150)}...
-                </p>
-              )}
-              
-              {book.rating > 0 && (
-                <p className="text-yellow-500 text-sm">
-                  ⭐ {book.rating}/5
-                </p>
-              )}
             </div>
           ))}
         </div>
 
+        {/* 空状態 */}
         {recommendations.length === 0 && !loading && (
-          <div className="text-center text-gray-500 mt-10">
-            <p>機械学習推薦を取得するにはボタンを押してください</p>
-            <p className="text-sm mt-2">TF-IDF + コサイン類似度による高精度推薦</p>
+          <div className="text-center py-16">
+            <div className="w-24 h-24 bg-gradient-to-r from-purple-100 to-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <span className="text-4xl">🤖</span>
+            </div>
+            <h3 className="text-2xl font-semibold text-gray-700 mb-2">AI推薦を開始しましょう</h3>
+            <p className="text-gray-500 mb-6 max-w-md mx-auto">
+              上のボタンを押すと、機械学習があなたの読書履歴を分析して、
+              最適な本を推薦します。
+            </p>
+            <div className="text-sm text-gray-400">
+              ✨ 高精度な推薦システムで新しい本との出会いを
+            </div>
+          </div>
+        )}
+
+        {/* 読み込み中のオーバーレイ */}
+        {loading && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-8 rounded-xl shadow-xl text-center">
+              <div className="w-16 h-16 border-4 border-purple-200 border-t-purple-500 rounded-full animate-spin mx-auto mb-4"></div>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">分析中...</h3>
+              <p className="text-gray-600">あなたの読書履歴を分析しています</p>
+            </div>
           </div>
         )}
       </div>

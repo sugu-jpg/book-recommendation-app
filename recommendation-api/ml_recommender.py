@@ -14,25 +14,43 @@ class MLBookRecommender:
             max_features=1000,
             stop_words=None,
             ngram_range=(1, 2),
-            min_df=1,
-            max_df=0.8
+            min_df=1,          # 最小文書頻度：1つの文書にでも出現すればOK
+            max_df=1.0,        # 最大文書頻度：すべての文書に出現してもOK
+            token_pattern=r'(?u)\b\w+\b',  # 日本語対応
+            lowercase=True,
+            strip_accents=None
         )
         self.book_vectors = None
         self.book_data = []
         self.feature_names = []
         
-    def preprocess_text(self, title: str, description: str = "") -> str:
-        """テキストの前処理"""
+    def preprocess_text(self, title: str, description: str = "", use_title: bool = False) -> str:
+        """改善されたテキストの前処理"""
         print(f"[ML] 前処理開始: {title[:30]}...")
+        print(f"[ML] 説明文の長さ: {len(description) if description else 0}")
         
-        # None値のチェック
-        if title is None:
-            title = ""
-        if description is None:
-            description = ""
+        # ハイブリッドアプローチ：説明文が空の場合はタイトルを使用
+        if use_title:
+            # タイトル + 説明
+            if title is None:
+                title = ""
+            if description is None:
+                description = ""
+            combined_text = f"{title} {description}"
+        else:
+            # 説明文が空の場合はタイトルを使用
+            if description is None:
+                description = ""
+            
+            if description.strip():
+                combined_text = description
+                print(f"[ML] 説明文を使用")
+            else:
+                # フォールバック: 説明文が空の場合はタイトルを使用
+                combined_text = title if title else ""
+                print(f"[ML] 説明文が空のため、タイトルを使用: {title}")
         
-        # タイトルと説明を結合
-        combined_text = f"{title} {description}"
+        print(f"[ML] 結合テキスト: {combined_text[:50]}...")
         
         # 巻数除去
         cleaned = re.sub(r'[0-9]+巻|第[0-9]+巻|vol\.?\s*[0-9]+|[0-9]+$', '', combined_text)
@@ -44,12 +62,13 @@ class MLBookRecommender:
         cleaned = re.sub(r'\s+', ' ', cleaned).strip()
         
         result = cleaned.lower()
-        print(f"[ML] 前処理結果: {result}")
+        print(f"[ML] 前処理結果: '{result}'")
         return result
     
-    def create_book_corpus(self, all_books: List[Dict[Any, Any]]) -> List[str]:
+    def create_book_corpus(self, all_books: List[Dict[Any, Any]], use_title: bool = False) -> List[str]:
         """全ての本からコーパスを作成"""
         print(f"[ML] コーパス作成開始 - 対象本数: {len(all_books)}")
+        print(f"[ML] use_title設定: {use_title}")
         
         corpus = []
         self.book_data = []
@@ -58,8 +77,10 @@ class MLBookRecommender:
             title = book.get('title', '') or ''
             description = book.get('description', '') or ''
             
-            # テキスト前処理
-            processed_text = self.preprocess_text(title, description)
+            print(f"[ML] 本 {i}: タイトル='{title}', 説明文の長さ={len(description)}")
+            
+            # テキスト前処理（use_titleパラメータを渡す）
+            processed_text = self.preprocess_text(title, description, use_title=use_title)
             corpus.append(processed_text)
             
             # 本のメタデータを保存
@@ -76,32 +97,83 @@ class MLBookRecommender:
             self.book_data.append(book_metadata)
         
         print(f"[ML] コーパス作成完了 - コーパスサイズ: {len(corpus)}")
+        
+        # 空でないコーパスの数を確認
+        non_empty_count = sum(1 for text in corpus if text and text.strip())
+        print(f"[ML] 空でないコーパス数: {non_empty_count}")
+        
         return corpus
     
     def fit_tfidf(self, corpus: List[str]):
         """TF-IDFモデルの学習"""
         print(f"[ML] TF-IDF学習開始 - コーパスサイズ: {len(corpus)}")
         
+        # デバッグ: コーパスの内容を確認
+        print(f"[ML] コーパスの最初の5つ:")
+        for i, text in enumerate(corpus[:5]):
+            print(f"[ML]   {i}: '{text}' (長さ: {len(text)})")
+        
         try:
             # 空のテキストを除外
             valid_corpus = [text for text in corpus if text and text.strip()]
             
-            if len(valid_corpus) < 2:
-                print(f"[ML] 警告: コーパスが小さすぎます ({len(valid_corpus)})")
+            print(f"[ML] 有効なコーパス数: {len(valid_corpus)}")
+            print(f"[ML] 有効なコーパスの最初の3つ:")
+            for i, text in enumerate(valid_corpus[:3]):
+                print(f"[ML]   {i}: '{text}' (長さ: {len(text)})")
+            
+            # 条件を緩和：1つでも有効なコーパスがあれば処理を続行
+            if len(valid_corpus) < 1:
+                print(f"[ML] 警告: 有効なコーパスが0個です")
                 # 最小限のTF-IDFモデルを作成
                 self.book_vectors = np.zeros((len(corpus), 10))
                 self.feature_names = ['dummy'] * 10
                 return
             
-            # TF-IDFベクトル化
+            # 1つだけの場合の特別処理
+            if len(valid_corpus) == 1:
+                print(f"[ML] 警告: 有効なコーパスが1個のみです - 簡単なベクトル化を実行")
+                # 単純な単語ベースのベクトル化
+                words = valid_corpus[0].split()
+                if len(words) == 0:
+                    self.book_vectors = np.zeros((len(corpus), 10))
+                    self.feature_names = ['dummy'] * 10
+                    return
+                
+                # 簡単な単語ベクトル化
+                unique_words = list(set(words))[:100]  # 最大100単語
+                self.feature_names = unique_words
+                
+                # 各文書を単語頻度でベクトル化
+                vectors = []
+                for text in corpus:
+                    if text and text.strip():
+                        text_words = text.split()
+                        vector = [text_words.count(word) for word in unique_words]
+                    else:
+                        vector = [0] * len(unique_words)
+                    vectors.append(vector)
+                
+                self.book_vectors = np.array(vectors)
+                print(f"[ML] 簡単なベクトル化完了 - 形状: {self.book_vectors.shape}")
+                print(f"[ML] 特徴語数: {len(self.feature_names)}")
+                return
+            
+            # 通常のTF-IDFベクトル化
             self.book_vectors = self.tfidf_vectorizer.fit_transform(valid_corpus)
             self.feature_names = self.tfidf_vectorizer.get_feature_names_out()
             
             print(f"[ML] TF-IDFベクトル形状: {self.book_vectors.shape}")
             print(f"[ML] 抽出された特徴語数: {len(self.feature_names)}")
             
+            # 特徴語をいくつか表示
+            if len(self.feature_names) > 0:
+                print(f"[ML] 特徴語の例: {self.feature_names[:10]}")
+            
         except Exception as e:
             print(f"[ML] TF-IDF学習エラー: {e}")
+            import traceback
+            traceback.print_exc()
             # フォールバック
             self.book_vectors = np.zeros((len(corpus), 10))
             self.feature_names = ['dummy'] * 10
@@ -243,29 +315,33 @@ class MLBookRecommender:
         external_books: List[Dict[Any, Any]], 
         num_recommendations: int = 10,
         diversity_factor: float = 0.3,
-        randomness: float = 0.2
+        randomness: float = 0.2,
+        use_title_in_tfidf: bool = True,  # 新しいパラメータ
+        filter_same_series: bool = True    # 新しいパラメータ
     ) -> List[Dict[Any, Any]]:
-        """詳細デバッグ版推薦"""
+        """改善された推薦機能"""
         print(f"[ML] 推薦開始")
-        print(f"[ML] ユーザー本数: {len(user_books)}")
-        print(f"[ML] 外部本数: {len(external_books)}")
-        print(f"[ML] 合計本数: {len(user_books) + len(external_books)}")
+        print(f"[ML] use_title_in_tfidf: {use_title_in_tfidf}")
+        print(f"[ML] filter_same_series: {filter_same_series}")
         
         try:
-            # 1-4. 従来の処理
+            # 1. 全書籍を結合
             all_books = user_books + external_books
             print(f"[ML] all_books作成後: {len(all_books)}冊")
             
-            corpus = self.create_book_corpus(all_books)
+            # 2. コーパス作成（use_title_in_tfidfパラメータを渡す）
+            corpus = self.create_book_corpus(all_books, use_title=use_title_in_tfidf)
             self.fit_tfidf(corpus)
             user_profile = self.create_user_profile(user_books)
             
             if user_profile.size == 0:
+                print("[ML] ユーザープロファイルが空です")
                 return []
                 
             similarity_scores = self.calculate_similarity_scores(user_profile)
             
             if not similarity_scores:
+                print("[ML] 類似度スコアが空です")
                 return []
             
             # 重要: ユーザー本数を明示的に記録
@@ -273,24 +349,11 @@ class MLBookRecommender:
             print(f"[ML] ユーザー本のインデックス範囲: 0-{user_books_count-1}")
             print(f"[ML] 外部本のインデックス範囲: {user_books_count}-{len(all_books)-1}")
             
-            # 上位類似度の詳細を表示
-            print(f"[ML] 類似度上位10件の詳細:")
-            for i, (book_index, similarity_score) in enumerate(similarity_scores[:10]):
-                book_type = "ユーザー本" if book_index < user_books_count else "外部本"
-                book_title = self.book_data[book_index].get('title', 'タイトルなし')
-                print(f"[ML]   {i}: index={book_index}, score={similarity_score:.4f}, type={book_type}, title='{book_title[:30]}...'")
-            
             # 外部本の類似度をチェック
             external_candidates = [(idx, score) for idx, score in similarity_scores if idx >= user_books_count]
             print(f"[ML] 外部本の候補数: {len(external_candidates)}")
             
-            if external_candidates:
-                print(f"[ML] 外部本の上位5件:")
-                for i, (book_index, similarity_score) in enumerate(external_candidates[:5]):
-                    book_title = self.book_data[book_index].get('title', 'タイトルなし')
-                    print(f"[ML]   外部{i}: index={book_index}, score={similarity_score:.4f}, title='{book_title[:30]}...'")
-            
-            # 5. 外部本のみで推薦候補を作成
+            # 候補作成
             all_candidates = []
             
             for book_index, similarity_score in external_candidates:
@@ -303,10 +366,22 @@ class MLBookRecommender:
                 if not book_title:
                     continue
                     
+                # 類似度の閾値を設定（0.01→0.005に緩和）
+                if similarity_score < 0.005:  # より低い閾値
+                    print(f"[ML] 類似度が低いため除外: {book_title} (スコア: {similarity_score:.4f})")
+                    continue
+                
                 # 重複チェック（簡略化）
                 user_titles = [ub.get('title', '').lower() for ub in user_books]
                 if book_title.lower() in user_titles:
                     continue
+                
+                # 類似度が0の本に対して、軽い重み付けを行う
+                if similarity_score == 0.0:
+                    # 評価やカテゴリに基づく軽い重み付け
+                    fallback_score = self.calculate_fallback_score(book)
+                    similarity_score = fallback_score * 0.1  # 軽い重み
+                    print(f"[ML] フォールバック適用: {book_title} -> スコア: {similarity_score:.4f}")
                 
                 # 有効な候補として追加
                 category = self.estimate_category(book)
@@ -321,6 +396,10 @@ class MLBookRecommender:
             
             print(f"[ML] 最終的な有効候補数: {len(all_candidates)}")
             
+            # 同じシリーズの除外
+            if filter_same_series:
+                all_candidates = self.filter_same_series_books(all_candidates, user_books)
+            
             # 推薦候補が少ない場合の対処
             if len(all_candidates) == 0:
                 print(f"[ML] 外部本候補が0件 - 外部検索を増やす必要があります")
@@ -330,7 +409,7 @@ class MLBookRecommender:
                 print(f"[ML] 候補不足: {len(all_candidates)}件 < {num_recommendations}件")
                 return [self.format_recommendation(candidate) for candidate in all_candidates]
             
-            # 7. 推薦生成
+            # 推薦生成
             recommendations = all_candidates[:num_recommendations]  # 簡略化
             final_recommendations = [self.format_recommendation(candidate) for candidate in recommendations]
             
@@ -525,6 +604,97 @@ class MLBookRecommender:
             'recommendation_reason': f"類似度: {candidate['similarity_score']:.3f} | カテゴリ: {candidate['category']}",
             'algorithm': 'TF-IDF + Cosine Similarity + Flexible Diversity'
         }
+
+    def extract_series_name(self, title: str) -> str:
+        """シリーズ名を抽出"""
+        if not title:
+            return ""
+        
+        # 巻数やバージョン情報を除去
+        cleaned = re.sub(r'[0-9]+巻|第[0-9]+巻|vol\.?\s*[0-9]+', '', title)
+        cleaned = re.sub(r'モノクロ版|カラー版|完全版|新装版|限定版', '', cleaned)
+        cleaned = re.sub(r'\([^)]*\)|（[^）]*）', '', cleaned)  # 括弧内除去
+        cleaned = re.sub(r'[0-9]+$', '', cleaned)  # 末尾の数字除去
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        
+        return cleaned.lower()
+
+    def is_same_series(self, title1: str, title2: str) -> bool:
+        """同じシリーズかどうかを判定"""
+        series1 = self.extract_series_name(title1)
+        series2 = self.extract_series_name(title2)
+        
+        if not series1 or not series2:
+            return False
+        
+        # 完全一致
+        if series1 == series2:
+            return True
+        
+        # 部分一致（短い方が長い方に含まれる場合）
+        if len(series1) > 3 and len(series2) > 3:
+            return series1 in series2 or series2 in series1
+        
+        return False
+
+    def filter_same_series_books(self, candidates: List[Dict], user_books: List[Dict]) -> List[Dict]:
+        """同じシリーズの本を除外"""
+        filtered_candidates = []
+        
+        # ユーザーが読んだ本のシリーズ名を収集
+        user_series = set()
+        for user_book in user_books:
+            user_title = user_book.get('title', '')
+            if user_title:
+                series_name = self.extract_series_name(user_title)
+                if series_name:
+                    user_series.add(series_name)
+        
+        print(f"[ML] ユーザーが読んだシリーズ: {user_series}")
+        
+        # 候補から同じシリーズを除外
+        for candidate in candidates:
+            book_title = candidate['book_data'].get('title', '')
+            if not book_title:
+                continue
+            
+            candidate_series = self.extract_series_name(book_title)
+            
+            # 同じシリーズでない場合のみ追加
+            if candidate_series not in user_series:
+                filtered_candidates.append(candidate)
+            else:
+                print(f"[ML] 除外: {book_title} (シリーズ: {candidate_series})")
+        
+        print(f"[ML] シリーズフィルタリング後: {len(filtered_candidates)}件")
+        return filtered_candidates
+
+    def calculate_fallback_score(self, book: Dict[Any, Any]) -> float:
+        """類似度が0の本に対するフォールバックスコア計算"""
+        score = 0.0
+        
+        # 評価による重み付け
+        rating = book.get('rating', 0) or 0
+        if rating > 0:
+            score += rating * 0.1  # 評価を軽く重み付け
+        
+        # 説明文がある場合の重み付け
+        description = book.get('description', '') or ''
+        if description and len(description) > 50:
+            score += 0.05  # 説明文がある場合は軽く加点
+        
+        # 著者情報がある場合の重み付け
+        authors = book.get('authors', []) or []
+        if authors:
+            score += 0.03  # 著者情報がある場合は軽く加点
+        
+        # 画像がある場合の重み付け
+        image = book.get('image', '') or ''
+        if image:
+            score += 0.02  # 画像がある場合は軽く加点
+        
+        # 最大値を0.2に制限（機械学習の類似度より低く保つ）
+        return min(score, 0.2)
 
 # グローバルインスタンス
 ml_recommender = MLBookRecommender()

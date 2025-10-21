@@ -178,6 +178,79 @@ class MLBookRecommender:
             self.book_vectors = np.zeros((len(corpus), 10))
             self.feature_names = ['dummy'] * 10
     
+    def calculate_hybrid_score(
+        self,
+        candidate_book: Dict[Any, Any],
+        user_books: List[Dict[Any, Any]],
+        tfidf_score: float,
+        weights: Dict[str, float] = None
+    ) -> Tuple[float, Dict[str, float]]:
+        """ハイブリッドスコアを計算（TF-IDF + 著者 + ジャンル + 人気度）"""
+        
+        if weights is None:
+            weights = {
+                'tfidf': 0.4,      # TF-IDFの重み
+                'author': 0.3,     # 著者マッチングの重み
+                'genre': 0.4,      # ジャンルマッチングの重み
+                'popularity': 0.3  # 人気度の重み
+            }
+        
+        # 1. 著者マッチングスコア
+        author_score = 0.0
+        candidate_authors = set(candidate_book.get('authors', []))
+        if candidate_authors:
+            for user_book in user_books:
+                user_authors = set(user_book.get('authors', []))
+                if user_authors and candidate_authors & user_authors:  # 共通の著者がいる
+                    author_score = 1.0
+                    print(f"[ML] 著者マッチ: {candidate_authors & user_authors}")
+                    break
+        
+        # 2. ジャンル/カテゴリマッチングスコア
+        genre_score = 0.0
+        candidate_categories = set(candidate_book.get('categories', []))
+        if candidate_categories:
+            user_categories = set()
+            for user_book in user_books:
+                user_categories.update(user_book.get('categories', []))
+            
+            if user_categories:
+                # ジャカード類似度
+                intersection = candidate_categories & user_categories
+                union = candidate_categories | user_categories
+                if union:
+                    genre_score = len(intersection) / len(union)
+                    if intersection:
+                        print(f"[ML] ジャンルマッチ: {intersection}")
+        
+        # 3. 人気度スコア（評価の正規化）
+        popularity_score = 0.0
+        rating = candidate_book.get('rating', 0)
+        if rating > 0:
+            # 評価を0-1に正規化（5点満点と仮定）
+            popularity_score = min(rating / 5.0, 1.0)
+        else:
+            popularity_score = 0.5  # 評価がない場合は中間値
+        
+        # 4. ハイブリッドスコアの計算
+        hybrid_score = (
+            tfidf_score * weights['tfidf'] +
+            author_score * weights['author'] +
+            genre_score * weights['genre'] +
+            popularity_score * weights['popularity']
+        )
+        
+        # デバッグ情報
+        score_breakdown = {
+            'tfidf': tfidf_score,
+            'author': author_score,
+            'genre': genre_score,
+            'popularity': popularity_score,
+            'hybrid': hybrid_score
+        }
+        
+        return hybrid_score, score_breakdown
+    
     def create_user_profile(self, user_books: List[Dict[Any, Any]]) -> np.ndarray:
         """ユーザープロファイルを作成"""
         print(f"[ML] ユーザープロファイル作成開始 - ユーザー本数: {len(user_books)}")
@@ -365,23 +438,21 @@ class MLBookRecommender:
                 
                 if not book_title:
                     continue
-                    
-                # 類似度の閾値を設定（0.01→0.005に緩和）
-                if similarity_score < 0.005:  # より低い閾値
-                    print(f"[ML] 類似度が低いため除外: {book_title} (スコア: {similarity_score:.4f})")
-                    continue
                 
                 # 重複チェック（簡略化）
                 user_titles = [ub.get('title', '').lower() for ub in user_books]
                 if book_title.lower() in user_titles:
                     continue
                 
-                # 類似度が0の本に対して、軽い重み付けを行う
-                if similarity_score == 0.0:
-                    # 評価やカテゴリに基づく軽い重み付け
-                    fallback_score = self.calculate_fallback_score(book)
-                    similarity_score = fallback_score * 0.1  # 軽い重み
-                    print(f"[ML] フォールバック適用: {book_title} -> スコア: {similarity_score:.4f}")
+                # ハイブリッドスコアを計算（TF-IDF + 著者 + ジャンル + 人気度）
+                hybrid_score, score_breakdown = self.calculate_hybrid_score(
+                    book, user_books, similarity_score
+                )
+                
+                # ハイブリッドスコアの閾値（より緩い）
+                if hybrid_score < 0.01:
+                    print(f"[ML] ハイブリッドスコアが低いため除外: {book_title} (スコア: {hybrid_score:.4f})")
+                    continue
                 
                 # 有効な候補として追加
                 category = self.estimate_category(book)
@@ -389,10 +460,16 @@ class MLBookRecommender:
                 candidate = {
                     'book_data': book,
                     'similarity_score': float(similarity_score),
+                    'hybrid_score': float(hybrid_score),  # ハイブリッドスコアを追加
+                    'score_breakdown': score_breakdown,   # スコアの内訳を追加
                     'category': category,
                     'title': book_title
                 }
                 all_candidates.append(candidate)
+                
+                # デバッグ出力
+                if score_breakdown['author'] > 0 or score_breakdown['genre'] > 0:
+                    print(f"[ML] {book_title[:30]}... - ハイブリッド: {hybrid_score:.3f} (TF-IDF: {score_breakdown['tfidf']:.3f}, 著者: {score_breakdown['author']:.3f}, ジャンル: {score_breakdown['genre']:.3f}, 人気: {score_breakdown['popularity']:.3f})")
             
             print(f"[ML] 最終的な有効候補数: {len(all_candidates)}")
             
@@ -409,8 +486,11 @@ class MLBookRecommender:
                 print(f"[ML] 候補不足: {len(all_candidates)}件 < {num_recommendations}件")
                 return [self.format_recommendation(candidate) for candidate in all_candidates]
             
+            # ハイブリッドスコアでソート
+            all_candidates.sort(key=lambda x: x['hybrid_score'], reverse=True)
+            
             # 推薦生成
-            recommendations = all_candidates[:num_recommendations]  # 簡略化
+            recommendations = all_candidates[:num_recommendations]
             final_recommendations = [self.format_recommendation(candidate) for candidate in recommendations]
             
             print(f"[ML] 最終推薦数: {len(final_recommendations)}")
@@ -592,6 +672,21 @@ class MLBookRecommender:
     def format_recommendation(self, candidate: Dict) -> Dict[Any, Any]:
         """推薦結果のフォーマット"""
         book = candidate['book_data']
+        score_breakdown = candidate.get('score_breakdown', {})
+        
+        # 推薦理由を詳細に生成
+        reasons = []
+        if score_breakdown.get('author', 0) > 0:
+            reasons.append("同じ著者")
+        if score_breakdown.get('genre', 0) > 0:
+            reasons.append("同ジャンル")
+        if score_breakdown.get('tfidf', 0) > 0.1:
+            reasons.append("内容が似ている")
+        if score_breakdown.get('popularity', 0) > 0.7:
+            reasons.append("高評価")
+        
+        reason_text = " | ".join(reasons) if reasons else "おすすめ"
+        
         return {
             'title': book.get('title', ''),
             'authors': book.get('authors', []),
@@ -599,41 +694,95 @@ class MLBookRecommender:
             'image': book.get('image', ''),
             'rating': book.get('rating', 0),
             'google_id': book.get('google_id', ''),
-            'ml_similarity_score': candidate['similarity_score'],
+            'ml_similarity_score': candidate.get('hybrid_score', candidate['similarity_score']),
             'category': candidate['category'],
-            'recommendation_reason': f"類似度: {candidate['similarity_score']:.3f} | カテゴリ: {candidate['category']}",
-            'algorithm': 'TF-IDF + Cosine Similarity + Flexible Diversity'
+            'recommendation_reason': reason_text,
+            'algorithm': 'Hybrid (TF-IDF + Author + Genre + Popularity)',
+            'score_details': {
+                'hybrid': candidate.get('hybrid_score', 0),
+                'tfidf': score_breakdown.get('tfidf', 0),
+                'author': score_breakdown.get('author', 0),
+                'genre': score_breakdown.get('genre', 0),
+                'popularity': score_breakdown.get('popularity', 0)
+            }
         }
 
     def extract_series_name(self, title: str) -> str:
-        """シリーズ名を抽出"""
+        """シリーズ名を抽出（より厳格、英語↔日本語統一）"""
         if not title:
             return ""
         
-        # 巻数やバージョン情報を除去
-        cleaned = re.sub(r'[0-9]+巻|第[0-9]+巻|vol\.?\s*[0-9]+', '', title)
-        cleaned = re.sub(r'モノクロ版|カラー版|完全版|新装版|限定版', '', cleaned)
-        cleaned = re.sub(r'\([^)]*\)|（[^）]*）', '', cleaned)  # 括弧内除去
-        cleaned = re.sub(r'[0-9]+$', '', cleaned)  # 末尾の数字除去
+        # 小文字化
+        cleaned = title.lower()
+        
+        # よく知られた英語タイトルを日本語に変換（正規化）
+        title_mapping = {
+            'one piece': 'ワンピース',
+            'onepiece': 'ワンピース',
+            'naruto': 'ナルト',
+            'bleach': 'ブリーチ',
+            'demon slayer': '鬼滅の刃',
+            'attack on titan': '進撃の巨人',
+            'my hero academia': '僕のヒーローアカデミア',
+            'jujutsu kaisen': '呪術廻戦',
+            'dragon ball': 'ドラゴンボール',
+            'hunter x hunter': 'ハンター×ハンター',
+            'death note': 'デスノート',
+            'haikyu': 'ハイキュー',
+            'slam dunk': 'スラムダンク'
+        }
+        
+        for eng, jpn in title_mapping.items():
+            if eng in cleaned:
+                cleaned = cleaned.replace(eng, jpn.lower())
+        
+        # 巻数パターンを除去（より広範囲）
+        cleaned = re.sub(r'[0-9]+巻|第[0-9]+巻', '', cleaned)  # ○巻、第○巻
+        cleaned = re.sub(r'vol\.?\s*[0-9]+', '', cleaned, flags=re.IGNORECASE)  # vol.1, Vol 1
+        cleaned = re.sub(r'\s+[0-9]+\s*$', '', cleaned)  # 末尾のスペース+数字（「ワンピース 1」など）
+        cleaned = re.sub(r'\s+[0-9]+\)', '', cleaned)  # 「タイトル 1)」パターン
+        cleaned = re.sub(r'[0-9]+$', '', cleaned)  # 末尾の数字のみ（「ワンピース1」など）
+        
+        # バージョン情報を除去
+        cleaned = re.sub(r'モノクロ版|カラー版|完全版|新装版|限定版|特装版', '', cleaned)
+        cleaned = re.sub(r'【完全版】|【新装版】|【限定版】', '', cleaned)
+        cleaned = re.sub(r'第[一二三四五六七八九十]+巻', '', cleaned)  # 第一巻、第二巻など
+        
+        # 括弧内を除去（巻数や補足情報が含まれることが多い）
+        cleaned = re.sub(r'\([^)]*\)|（[^）]*）|【[^】]*】|\[[^\]]*\]', '', cleaned)
+        
+        # 余分な空白を除去
         cleaned = re.sub(r'\s+', ' ', cleaned).strip()
         
-        return cleaned.lower()
+        # 記号を除去
+        cleaned = re.sub(r'[!！?？~～\-ー・:]', '', cleaned)
+        
+        return cleaned
 
     def is_same_series(self, title1: str, title2: str) -> bool:
-        """同じシリーズかどうかを判定"""
+        """同じシリーズかどうかを判定（より厳格）"""
         series1 = self.extract_series_name(title1)
         series2 = self.extract_series_name(title2)
         
-        if not series1 or not series2:
+        # 空または非常に短いタイトルは除外
+        if not series1 or not series2 or len(series1) < 2 or len(series2) < 2:
             return False
         
         # 完全一致
         if series1 == series2:
             return True
         
-        # 部分一致（短い方が長い方に含まれる場合）
-        if len(series1) > 3 and len(series2) > 3:
-            return series1 in series2 or series2 in series1
+        # 部分一致（85%以上の類似度）
+        # 短い方の長さの85%以上が一致する場合
+        min_len = min(len(series1), len(series2))
+        max_len = max(len(series1), len(series2))
+        
+        # レーベンシュタイン距離の簡易版：短い方が長い方に含まれる
+        if min_len > 3:
+            if series1 in series2 or series2 in series1:
+                # 含まれているが、長さの差が大きすぎる場合は除外
+                if max_len / min_len < 1.5:  # 1.5倍以内
+                    return True
         
         return False
 

@@ -108,13 +108,13 @@ async def get_ml_recommendations(
                 print(f"[API] 検索エラー: {e}")
                 continue
 
-        # 追加の汎用検索を実行（フォールバック）
+        # 追加の汎用検索を実行（具体的な人気作品）
         additional_queries = [
-            "人気 漫画 おすすめ",
-            "話題 コミック 新刊",
-            "ランキング 漫画",
-            "評価 高い 漫画",
-            "新作 漫画"
+            "週刊少年ジャンプ コミックス",
+            "バトル漫画 人気",
+            "少年漫画 おすすめ",
+            "アクション コミック",
+            "ジャンプコミックス 名作"
         ]
 
         for query in additional_queries:
@@ -137,6 +137,96 @@ async def get_ml_recommendations(
                 seen_titles.add(title)
 
         print(f"[API] 重複除去後: {len(unique_external_books)}件")
+
+        # 解説本・教材・雑誌・ゲーム本を除外（超厳格）
+        exclude_patterns = [
+            # 解説本パターン
+            'マンガでわかる', '漫画でわかる', 'まんがでわかる',
+            'マンガで学ぶ', '漫画で学ぶ', 'まんがで学ぶ',
+            'マンガで読む', '漫画で読む', 'まんがで読む',
+            'マンガ 日本', '漫画 日本の歴史',
+            'コミック版', 'コミックでわかる',
+            '学習まんが', '学習マンガ', '学習漫画',
+            '図解', '解説', '入門',
+            'で辿る', 'の描写', 'なぜ', 'ならなければ',
+            'いかにして', 'になろうとした', 'を吹き抜けた',
+            # ビジネス・教養・学術
+            'ビジネス', 'マーケティング', '経営',
+            '自己啓発', '心理学', '哲学',
+            '考古学', '歴史', '全史', '研究',
+            '親密な関係', '探る', '分析',
+            '明治', '大正', '昭和', '平成', '話題の本',
+            'ページの風', '世紀を',
+            # 検定・試験
+            '検定', '試験', '問題集', '過去問',
+            '級', '公式',
+            # 雑誌パターン
+            '［雑誌］', '[雑誌]', '雑誌', '月刊', '週刊',
+            '号', '増刊', '特集', 'ムック',
+            '東京人', '文藝',
+            # ゲーム関連
+            'ゲーム大全', 'ゲーム攻略', 'ゲームガイド',
+            'から生まれた', 'ゲームとマンガ',
+            # 合本・セット
+            '合本', 'セット', '全巻', 'まとめ買い',
+            'ボックス', 'BOX',
+            # 試し読み・無料パック
+            '試し読み', '【無料】', '無料', 'パック',
+            '厳選', 'サンプル', 'お試し',
+            # 目録・リスト
+            '総目録', '目録', 'カタログ', 'リスト',
+            '総合', '一覧',
+            # 完全版・特別版（数字付き）
+            '【完全版】(', '完全版】(', '(第', '第ニ巻', '第二巻', '第三巻',
+            # テレビ・ドラマ関連
+            'テレビドラマ', 'テレビ', 'ドラマ', 'クロニクル',
+            'TV', 'ＴＶ', '→', '1990', '2020',
+            # 交通・実用書
+            '交通事故', '鑑定人', '環倫一郎',
+            # 記録・ドキュメンタリー
+            '記録', 'ドキュメント', '最後の', '住人',
+            'トキワ荘', 'スキサケ',
+            # 映画・手塚治虫関連の解説本
+            '映画になろう', '手塚治虫を', 
+            # その他
+            'ファンブック', '公式ガイド', '設定資料集',
+            'アンソロジー', '4コマ', 'ショート'
+        ]
+        
+        filtered_books = []
+        for book in unique_external_books:
+            title = book.get('title', '')
+            description = book.get('description', '') or ''
+            categories = book.get('categories', []) or []
+            
+            # 除外パターンに一致するかチェック
+            should_exclude = any(pattern in title or pattern in description for pattern in exclude_patterns)
+            
+            if should_exclude:
+                print(f"[API] 除外: {title}")
+                continue
+            
+            # カテゴリフィルタリング（より厳格）
+            # 漫画・コミック関連のカテゴリがあるものだけを通す
+            manga_categories = ['comics', 'graphic', 'manga', 'コミック', '漫画', 'まんが']
+            has_manga_category = False
+            
+            if categories:
+                for cat in categories:
+                    cat_lower = str(cat).lower()
+                    if any(manga_cat in cat_lower for manga_cat in manga_categories):
+                        has_manga_category = True
+                        break
+            
+            # カテゴリがない、または漫画カテゴリがある場合は通す
+            # （カテゴリがない本もあるため、完全除外はしない）
+            if not categories or has_manga_category:
+                filtered_books.append(book)
+            else:
+                print(f"[API] 非漫画カテゴリのため除外: {title} (カテゴリ: {categories})")
+        
+        unique_external_books = filtered_books
+        print(f"[API] フィルタリング後: {len(unique_external_books)}件")
 
         # ユーザーの好みに基づくフィルタリング
         unique_external_books = filter_by_user_preferences_relaxed(unique_external_books, user_preferences)
@@ -627,7 +717,7 @@ def generate_personalized_queries(user_books):
     # 著者ベースの検索（個人化）
     for author in list(user_authors)[:3]:  # 最大3人の著者
         if author:
-            queries.append(f"{author} 他の作品 漫画")
+            queries.append(f"{author}")  # シンプルに著者名のみ
     
     # ユーザーのタイトルから具体的なキーワードを抽出
     title_keywords = set()
@@ -635,16 +725,17 @@ def generate_personalized_queries(user_books):
         # タイトルから意味のある単語を抽出
         words = title.split()
         for word in words:
-            if len(word) > 2 and word not in ['の', 'は', 'が', 'を', 'に', 'で', 'と']:
+            if len(word) > 2 and word not in ['の', 'は', 'が', 'を', 'に', 'で', 'と', '巻', '第']:
                 title_keywords.add(word)
     
-    # ユーザー固有のキーワードベース検索
-    for keyword in list(title_keywords)[:3]:  # 最大3つのキーワード
-        queries.append(f"{keyword} 類似 漫画")
+    # ユーザー固有のキーワードベース検索（具体的な作品名として）
+    for keyword in list(title_keywords)[:2]:  # 最大2つに減らす
+        if len(keyword) > 3:  # より長いキーワードのみ
+            queries.append(keyword)
     
-    # フォールバック：汎用的だが偏りのない検索
+    # フォールバック：具体的な人気作品
     if not queries:
-        queries = ['人気 漫画', '新刊 コミック', '話題 漫画']
+        queries = ['呪術廻戦', 'チェンソーマン', 'スパイファミリー']
     
     return queries[:5]
 

@@ -2,6 +2,9 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
 from typing import List, Dict, Any
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class DatabaseConnection:
     def __init__(self):
